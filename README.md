@@ -55,8 +55,18 @@ Get all clusters and return their name,id and the nested timestamp from resource
 ```
 getClusters --fields=name,id,resources_version.timestamp
 ```
-
 > 📝 Nested resources are flattened with `__` (double underscore) delimiters. The above example would return the key `resources_version__timestamp`.
+
+---
+
+#### Read Other APIs
+
+You can read any other information from the Fusion API by calling `getOther`. This requests info from the API root, but you can add a path with
+```
+getOther --other-action=summary
+```
+
+---
 
 #### Delete Operations
 
@@ -69,4 +79,5 @@ Delete all of my HAProxy nodes from all clusters 😱
 ```
 for node in $(getHaproxyNodes --fields=id --shell) ; do deleteHaproxyNode --node-id="${node}" ; done
 ```
+
 
