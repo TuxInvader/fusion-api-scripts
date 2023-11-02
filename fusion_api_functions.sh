@@ -11,7 +11,24 @@ getClusters() {
     action_path="/clusters"
 
     __parse_read_args $*
-    __build_jq_filter
+    __build_jq_filter "array"
+
+    if [ "${arg_raw}" == true ]
+    then
+        __fetch_api ${action_path}
+    else
+        [ -n "${arg_debug+x}" ] && echo "Path: $action_path, JQ: $jq_cmd $jq_args" >&2
+        __fetch_api ${action_path} | $jq_cmd "${jq_args}"
+    fi
+    __reset_args
+}
+
+getControllerConfig() {
+    default_jq_fields='{ schema: .schema, address: .address, port: .port, name: .name }'
+    action_path="/controller/configuration"
+
+    __parse_read_args $*
+    __build_jq_filter "hash"
 
     if [ "${arg_raw}" == true ]
     then
@@ -28,7 +45,7 @@ getAwsAutoscaleGroups() {
     action_path="/integrations/aws/stacks"
     
     __parse_read_args $*
-    __build_jq_filter
+    __build_jq_filter "array"
 
     if [ "${arg_raw}" == true ]
     then
@@ -56,6 +73,17 @@ createAwsAutoscaleGroup() {
         __fetch_api "${action_path}" 'POST' "${asg_body}" | jq
     fi
     __reset_args
+}
+
+deleteAwsAutoscaleGroup() {
+    __parse_write_args $*
+    action_path="/integrations/aws/stacks/${fusion_asg_id}"
+    checkArgs fusion_asg_id
+    if [ "$?" -eq 0 ]
+    then
+        [ -n "${arg_debug+x}" ] && echo "Path: $action_path, body: ${body}" >&2
+        __fetch_api "${action_path}" 'DELETE' | jq
+    fi
 }
 
 createBootstrapKey() {
@@ -92,26 +120,37 @@ checkArgs() {
 
 __fetch_api() {
     path=$1
-    method=$2
+    if [ "$#" == 1 ]
+    then
+        method="GET"
+    else 
+        method=$2
+    fi
     response=""
     if [ "$method" == "POST" ] || [ "$method" == "PUT" ]
     then
         body=$3
         response=$(curl -s --user "${fusion_user}:${fusion_pass}" -H "Content-Type: application/json" -X "$method" -d "$body" "${fusion_api}${path}")
     else
-        response=$(curl -s --user "${fusion_user}:${fusion_pass}" "${fusion_api}${path}")
+        response=$(curl -s --user "${fusion_user}:${fusion_pass}" -X "$method" "${fusion_api}${path}")
     fi
     echo $response
 }
 
 __build_jq_filter() {
+    type=$1
     unset jq_args
 
-    if [ "${arg_shell}" == true ]
+    if [ "$type" == "hash" ]
     then
-        jq_args=" .[] "
+        jq_args=" . "
     else
-        jq_args="[ .[] "
+        if [ "${arg_shell}" == true ]
+        then
+            jq_args=" .[] "
+        else
+            jq_args="[ .[] "
+        fi
     fi
 
     if [ -n "$arg_select" ]
@@ -139,11 +178,11 @@ __build_jq_filter() {
         jq_args="${jq_args} | ${default_jq_fields} "
     fi
 
-    [ "${arg_shell}" != true ] && jq_args="${jq_args} ]"
+    [ "${arg_shell}" != true ] && [ "$type" != "hash" ] && jq_args="${jq_args} ]"
 }
 
 __reset_args() {
-    unset fusion_asg_capacity fusion_cluster_id fusion_bootstrap_duration
+    unset fusion_asg_capacity fusion_asg_id fusion_cluster_id fusion_bootstrap_duration 
     unset fusion_aws_ami fusion_aws_role  fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroup fusion_aws_subnet
     unset arg_fields arg_select arg_raw arg_all arg_shell arg_debug
     unset jq_cmd
@@ -159,6 +198,7 @@ __parse_write_args() {
         [[ "${args[$i]}" =~ --bootstrap-duration.* ]] && fusion_bootstrap_duration=${args[$i]#*=} && continue
 
         [[ "${args[$i]}" =~ --asg-capacity.* ]] && fusion_asg_capacity=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --asg-id.* ]] && fusion_asg_id=${args[$i]#*=} && continue
 
         [[ "${args[$i]}" =~ --aws-ami.* ]] && fusion_aws_ami=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --aws-role.* ]] && fusion_aws_role=${args[$i]#*=} && continue

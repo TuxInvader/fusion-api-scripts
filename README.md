@@ -55,5 +55,12 @@ Get all clusters and return their name,id and the nested timestamp from resource
 getClusters --fields=name,id,resources_version.timestamp
 ```
 
-Nested resources are flattened with `__` delimiters. The above example would return the key `resources_version__timestamp`.
+> 📝 Nested resources are flattened with `__` (double underscore) delimiters. The above example would return the key `resources_version__timestamp`.
+
+Delete the AWS Autoscale Group in the Stockholm region
+```
+deleteAwsAutoScaleGroups --asg-id=$(getAwsAutoScaleGroups --select=region:eu-north-1 --fields=id --shell)
+```
+
+
 
