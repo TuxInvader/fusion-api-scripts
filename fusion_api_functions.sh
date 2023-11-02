@@ -38,12 +38,43 @@ getHaproxyNodes() {
     __do_fusion_get
 }
 
+getClusterLogTargets() {
+    default_jq_fields='{ id: .id, name: .name, log_type: .log_type }'
+    action_path="/controller/addons/cluster_log_targets"
+
+    __parse_read_args $*
+    __do_fusion_get
+}
+
 getOther() {
     default_jq_fields='.'
     __parse_read_args $*
     action_path="/${arg_other_action}"
     __do_fusion_get
 
+}
+
+createClusterLogTarget() {
+    action_path="/controller/addons/cluster_log_targets"
+    __parse_write_args $*
+
+    [ -z "${fusion_enabled+x}" ] && fusion_enabled=true
+    [ -z "${fusion_log_fusion+x}" ] && fusion_log_fusion=false
+    [ -z "${fusion_log_haproxy+x}" ] && fusion_log_haproxy=true
+    [ -z "${fusion_transport+x}" ] && fusion_transport="TCP"
+    
+    logtarget_body="{\"enabled\": ${fusion_enabled}, \"log_type\": { \"fusion\": ${fusion_log_fusion}, \"haproxy\": ${fusion_log_haproxy} }, \
+                \"name\": \"${fusion_name}\", \"target_ip\": \"${fusion_ip_address}\", \"target_port\": ${fusion_port}, \
+                \"transport\": \"${fusion_transport}\"}"
+
+    checkArgs fusion_name fusion_ip_address fusion_port
+    if [ "$?" -eq 0 ]
+    then
+        __fetch_api "${action_path}" 'POST' "${logtarget_body}"
+        echo "${fusion_response}" | jq
+    fi
+    unset logtarget_body
+    __reset_args
 }
 
 createAwsAutoscaleGroup() {
@@ -64,6 +95,7 @@ createAwsAutoscaleGroup() {
         __fetch_api "${action_path}" 'POST' "${asg_body}"
         echo "${fusion_response}" | jq
     fi
+    unset asg_body
     __reset_args
 }
 
@@ -218,6 +250,8 @@ __reset_args() {
     unset fusion_cluster_id fusion_node_id fusion_other_action
     unset arg_fields arg_select arg_raw arg_all arg_shell arg_debug arg_other_action
     unset jq_cmd fusion_response jq_filter action_path default_jq_fields
+    unset fusion_enabled fusion_name fusion_ip_address fusion_port fusion_transport 
+    unset fusion_log_haproxy fusion_log_fusion
 }
 
 __parse_write_args() {
@@ -225,16 +259,27 @@ __parse_write_args() {
     unset fusion_aws_ami fusion_aws_role fusion_cluster_id fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroups fusion_aws_subnets
     unset fusion_asg_capacity fusion_asg_id 
     unset fusion_cluster_id fusion_node_id
+    unset fusion_enabled fusion_name fusion_ip_address fusion_port fusion_transport 
+    unset fusion_log_haproxy fusion_log_fusion
 
     jq_cmd="jq"
     for (( i=0; $i < $# ; i++ ))
     do
+        # Generic, used for multiple APIs
+        [[ "${args[$i]}" =~ --name.* ]] && fusion_name=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --enabled.* ]] && fusion_enabled=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --ip-address.* ]] && fusion_ip_address=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --port.* ]] && fusion_port=${args[$i]#*=} && continue
+        # log targets
+        [[ "${args[$i]}" =~ --log-haproxy.* ]] && fusion_log_haproxy=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --log-fusion.* ]] && fusion_log_fusion=${args[$i]#*=} && continue
+        # cluster related
         [[ "${args[$i]}" =~ --cluster-id.* ]] && fusion_cluster_id=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --node-id.* ]] && fusion_node_id=${args[$i]#*=} && continue
-
+        # asg related
         [[ "${args[$i]}" =~ --asg-capacity.* ]] && fusion_asg_capacity=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --asg-id.* ]] && fusion_asg_id=${args[$i]#*=} && continue
-
+        # aws related
         [[ "${args[$i]}" =~ --aws-ami.* ]] && fusion_aws_ami=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --aws-role.* ]] && fusion_aws_role=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --aws-hw-type.* ]] && fusion_aws_hw_type=${args[$i]#*=} && continue
