@@ -15,6 +15,7 @@ do
     [[ "${args[$i]}" =~ --aws-inst-type.* ]] && aws_inst_type=${args[$i]#*=} && continue
     [[ "${args[$i]}" =~ --hapee-os.* ]] && hapee_os=${args[$i]#*=} && continue
     [[ "${args[$i]}" =~ --hapee-version.* ]] && hapee_version=${args[$i]#*=} && continue
+    [[ "${args[$i]}" =~ --debug ]] && arg_debug=true && continue
 done
 
 checkArgs cluster_name aws_region aws_role aws_secgroup_name aws_subnet_name aws_sshkey
@@ -29,13 +30,16 @@ aws_sg_ids=$(aws --region "${aws_region}" ec2 describe-security-groups --filters
 aws_subnet_ids=$(aws --region "${aws_region}" ec2 describe-subnets --filters "Name=tag:Name,Values=${aws_subnet_name}" | jq -cMr ".Subnets[].SubnetId")
 cluster_id=$(getClusters --name="${cluster_name} --fields=id --shell")
 
+aws_sg_ids=$( echo "${aws_sg_ids[*]}" |  awk '{printf "%s%s",sep,$1; sep=","} END{print ""}' )
+aws_subnet_ids=$( echo "${aws_subnet_ids[*]}" |  awk '{printf "%s%s",sep,$1; sep=","} END{print ""}' )
+
 cat <<EOF 
 AWS Region  ....................  ${aws_region}
 AWS Role Id:  ..................  ${aws_asg_role}
 AWS Instance Type:  ............  ${aws_inst_type}
 AWS KeyPair ....................  ${aws_sshkey}
-AWS SecurityGroup Ids:  ........  $( echo ${aws_sg_ids[@]} )
-AWS Subnet Ids  ................  $( echo ${aws_subnet_ids[@]} )
+AWS SecurityGroup Ids:  ........  ${aws_sg_ids[0]}
+AWS Subnet Ids  ................  ${aws_subnet_ids[0]}
 HAPEE Image Id:  ...............  ${hapee_image}
 
 Fusion_Cluster:
@@ -52,6 +56,9 @@ then
     exit 1
 fi
 
+debug=""
+[ -n "${arg_debug+x}" ] && debug="--debug"
+
 createAwsAutoscaleGroup --aws-ami="$hapee_image" --aws-role="${aws_asg_role}" --asg-capacity="2" --cluster-id="${cluster_id}" \
                         --aws-hw-type="${aws_inst_type}" --aws-sshkey="${aws_sshkey}" --aws-region="${aws_region}" \
-                        --aws-secgroup="${aws_sg_ids[@]}" --aws-subnet="${aws_subnet_ids[@]}"
+                        --aws-secgroups="${aws_sg_ids}" --aws-subnets="${aws_subnet_ids}" $debug

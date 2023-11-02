@@ -40,6 +40,7 @@ Read operations such as `getClusters` take the following additional options
 
 ### Some more Examples
 
+#### Read Operations
 Get the cluster id of the "New Delhi" cluster and return it as a single value
 ```
 getClusters --select=name:newdelhi --fields=id --shell
@@ -57,10 +58,15 @@ getClusters --fields=name,id,resources_version.timestamp
 
 > 📝 Nested resources are flattened with `__` (double underscore) delimiters. The above example would return the key `resources_version__timestamp`.
 
+#### Delete Operations
+
 Delete the AWS Autoscale Group in the Stockholm region
 ```
 deleteAwsAutoScaleGroups --asg-id=$(getAwsAutoScaleGroups --select=region:eu-north-1 --fields=id --shell)
 ```
 
-
+Delete all of my HAProxy nodes from all clusters 😱
+```
+for node in $(getHaproxyNodes --fields=id --shell) ; do deleteHaproxyNode --node-id="${node}" ; done
+```
 

@@ -5,7 +5,7 @@ source fusion_api_functions.sh
 args=( $@ )
 for (( i=0; $i < $# ; i++ ))
 do
-    [[ "${args[$i]}" =~ --cluster_name.* ]] && cluster_name=${args[$i]#*=} && continue
+    [[ "${args[$i]}" =~ --cluster-name.* ]] && cluster_name=${args[$i]#*=} && continue
 done
 
 checkArgs cluster_name

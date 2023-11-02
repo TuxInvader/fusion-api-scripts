@@ -12,7 +12,6 @@ getClusters() {
 
     __parse_read_args $*
     __do_fusion_get
-
 }
 
 getControllerConfig() {
@@ -21,7 +20,6 @@ getControllerConfig() {
 
     __parse_read_args $*
     __do_fusion_get
-
 }
 
 getAwsAutoscaleGroups() {
@@ -30,6 +28,21 @@ getAwsAutoscaleGroups() {
     
     __parse_read_args $*
     __do_fusion_get
+}
+
+getHaproxyNodes() {
+    default_jq_fields='{ id: .id, name: .name, description: .description, cluster_id: .cluster_id }'
+    action_path="/nodes"
+
+    __parse_read_args $*
+    __do_fusion_get
+}
+
+getOther() {
+    default_jq_fields='.'
+    __parse_read_args $*
+    action_path="/${arg_other_action}"
+    __do_fusion_get
 
 }
 
@@ -37,18 +50,32 @@ createAwsAutoscaleGroup() {
     action_path="/integrations/aws/stacks"
     __parse_write_args $*
 
+    fusion_aws_secgroups=$(echo "$fusion_aws_secgroups" | sed -re 's/(^\"*|\"*$)/"/g;s/\"*,\"*/\",\"/g' )
+    fusion_aws_subnets=$(echo "$fusion_aws_subnets" | sed -re 's/(^\"*|\"*$)/"/g;s/\"*,\"*/\",\"/g' )
+
     asg_body="{\"ami\": \"$fusion_aws_ami\",\"authentication\":{\"role_arn\": \"$fusion_aws_role\",\"strategy\": \"imds\"},\
             \"capacity\": $fusion_asg_capacity,\"cluster_id\": \"$fusion_cluster_id\",\"instance_type\": \"$fusion_aws_hw_type\",\"key_name\": \"$fusion_aws_sshkey\", \
-            \"region\": \"$fusion_aws_region\",\"security_groups\": [ \"$fusion_aws_secgroup\" ], \"subnets\": [ \"$fusion_aws_subnet\" ], \
+            \"region\": \"$fusion_aws_region\",\"security_groups\": [ $fusion_aws_secgroups ], \"subnets\": [ $fusion_aws_subnets ], \
             \"use_public_ipv4\": false }"
 
-    checkArgs fusion_aws_ami fusion_aws_role fusion_asg_capacity fusion_cluster_id fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroup fusion_aws_subnet
+    checkArgs fusion_aws_ami fusion_aws_role fusion_asg_capacity fusion_cluster_id fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroups fusion_aws_subnets
     if [ "$?" -eq 0 ]
     then
         __fetch_api "${action_path}" 'POST' "${asg_body}"
         echo "${fusion_response}" | jq
     fi
     __reset_args
+}
+
+deleteHaproxyNode() {
+   __parse_write_args $*
+    action_path="/nodes/${fusion_node_id}"
+    checkArgs fusion_node_id
+    if [ "$?" -eq 0 ]
+    then
+        __fetch_api "${action_path}" 'DELETE'
+        echo "${fusion_response}" | jq
+    fi
 }
 
 deleteAwsAutoscaleGroup() {
@@ -83,7 +110,7 @@ checkArgs() {
     do
         if [[ -z "${!args[$i]+x}" ]]
         then
-            nextarg=$(echo "${args[$i]}" | sed -re 's/(^|fusion_)/--/g' | sed -re s'/_/-/g')
+            nextarg=$(echo "${args[$i]}" | sed -re 's/(^|fusion_)/--/g; s/_/-/g')
             [ -z "${missing+x}" ] && missing="$nextarg" || missing="${missing} ${nextarg}"
             unset nextarg
         fi
@@ -186,21 +213,24 @@ __build_jq_filter() {
 }
 
 __reset_args() {
-    unset fusion_asg_capacity fusion_asg_id fusion_cluster_id fusion_bootstrap_duration 
-    unset fusion_aws_ami fusion_aws_role  fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroup fusion_aws_subnet
-    unset arg_fields arg_select arg_raw arg_all arg_shell arg_debug
-    unset jq_cmd fusion_response jq_filter
+    unset fusion_asg_capacity fusion_asg_id
+    unset fusion_aws_ami fusion_aws_role  fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroups fusion_aws_subnets
+    unset fusion_cluster_id fusion_node_id fusion_other_action
+    unset arg_fields arg_select arg_raw arg_all arg_shell arg_debug arg_other_action
+    unset jq_cmd fusion_response jq_filter action_path default_jq_fields
 }
 
 __parse_write_args() {
     args=( $@ )
-    unset fusion_aws_ami fusion_aws_role fusion_asg_capacity fusion_cluster_id fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroup fusion_aws_subnet
-    unset fusion_bootstrap_duration
+    unset fusion_aws_ami fusion_aws_role fusion_cluster_id fusion_aws_hw_type fusion_aws_sshkey fusion_aws_region fusion_aws_secgroups fusion_aws_subnets
+    unset fusion_asg_capacity fusion_asg_id 
+    unset fusion_cluster_id fusion_node_id
+
     jq_cmd="jq"
     for (( i=0; $i < $# ; i++ ))
     do
         [[ "${args[$i]}" =~ --cluster-id.* ]] && fusion_cluster_id=${args[$i]#*=} && continue
-        [[ "${args[$i]}" =~ --bootstrap-duration.* ]] && fusion_bootstrap_duration=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --node-id.* ]] && fusion_node_id=${args[$i]#*=} && continue
 
         [[ "${args[$i]}" =~ --asg-capacity.* ]] && fusion_asg_capacity=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --asg-id.* ]] && fusion_asg_id=${args[$i]#*=} && continue
@@ -210,8 +240,8 @@ __parse_write_args() {
         [[ "${args[$i]}" =~ --aws-hw-type.* ]] && fusion_aws_hw_type=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --aws-sshkey.* ]] && fusion_aws_sshkey=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --aws-region.* ]] && fusion_aws_region=${args[$i]#*=} && continue
-        [[ "${args[$i]}" =~ --aws-secgroup.* ]] && fusion_aws_secgroup=${args[$i]#*=} && continue
-        [[ "${args[$i]}" =~ --aws-subnet.* ]] && fusion_aws_subnet=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --aws-secgroups.* ]] && fusion_aws_secgroups=${args[$i]#*=} && continue
+        [[ "${args[$i]}" =~ --aws-subnets.* ]] && fusion_aws_subnets=${args[$i]#*=} && continue
 
         [[ "${args[$i]}" =~ --debug ]] && arg_debug=true && continue
     done
@@ -219,13 +249,14 @@ __parse_write_args() {
 
 __parse_read_args() {
     args=( $@ )
-    unset arg_fields arg_select arg_raw arg_all arg_shell
+    unset arg_fields arg_select arg_raw arg_all arg_shell arg_debug arg_other_action
     for (( i=0; $i < $# ; i++ ))
     do
         [[ "${args[$i]}" =~ --fields.* ]] && arg_fields=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --id.* ]] && arg_select=" .id == \"${args[$i]#*=}\" " && continue
         [[ "${args[$i]}" =~ --name.* ]] && arg_select=" .name == \"${args[$i]#*=}\" " && continue
         [[ "${args[$i]}" =~ --select.* ]] && arg_select=$(echo "${args[$i]#*=}" | sed -re 's/(.*)[=:](.*)/\.\1 == "\2\"/') && continue
+        [[ "${args[$i]}" =~ --other-action.* ]] && arg_other_action=${args[$i]#*=} && continue
         [[ "${args[$i]}" =~ --raw ]] && arg_raw=true && continue
         [[ "${args[$i]}" =~ --all ]] && arg_all=true && continue
         [[ "${args[$i]}" =~ --shell ]] && arg_shell=true && continue
